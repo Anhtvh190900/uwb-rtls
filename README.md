@@ -12,6 +12,12 @@
 
 **[Results](#experimental-validation) · [System](#system-overview) · [Features](#core-capabilities) · [Quick start](#quick-start) · [Documentation](#documentation)**
 
+<p>
+  <img src="docs/assets/images/results/tag-board-cutout.png" alt="UWB-RTLS Tag board" width="27%">
+  &nbsp;&nbsp;&nbsp;
+  <img src="docs/assets/images/results/mobile-robot-cutout.png" alt="Mobile robot equipped with the UWB Tag" width="43%">
+</p>
+
 </div>
 
 UWB-RTLS is an end-to-end real-time location system developed for indoor mobile robots. Fixed UWB Anchors measure their distance to a mobile Tag using DS-TWR. The Tag validates the ranges, selects a reliable Anchor subset, fuses UWB with IMU data, and calculates its pose directly on an STM32F411. RTLS Studio provides wireless configuration, live diagnostics, visualization, and experiment logging.
@@ -58,6 +64,17 @@ The experimental platform uses the developed Anchor/Tag hardware and a 1:10-scal
   <tr>
     <td width="50%" align="center"><img src="docs/assets/images/results/chapter5-test-yard-anchor.jpg" alt="UWB Anchor mounted at the test yard" width="100%"><br><sub>Anchor installed at the surveyed height</sub></td>
     <td width="50%" align="center"><img src="docs/assets/images/results/chapter5-vehicle-tag.jpg" alt="Mobile robot carrying the UWB Tag" width="100%"><br><sub>1:10-scale vehicle carrying the Tag</sub></td>
+  </tr>
+</table>
+
+### Live demonstrations
+
+The synchronized views below show the vehicle in motion alongside the position estimated by the Tag and displayed in RTLS Studio.
+
+<table>
+  <tr>
+    <td width="50%" align="center"><img src="docs/assets/images/results/classroom-live-tracking.gif" alt="Live UWB tracking demonstration in the classroom" width="100%"><br><sub>Classroom experiment with live trajectory tracking</sub></td>
+    <td width="50%" align="center"><img src="docs/assets/images/results/test-yard-live-tracking.gif" alt="Live UWB tracking demonstration in the test yard" width="100%"><br><sub>Test-yard experiment with the mobile robot in motion</sub></td>
   </tr>
 </table>
 
