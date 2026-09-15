@@ -279,6 +279,9 @@ PB_BIND(protobuf_zone_profile_resp_t, protobuf_zone_profile_resp_t, AUTO)
 PB_BIND(protobuf_calib_data_t, protobuf_calib_data_t, AUTO)
 
 
+PB_BIND(protobuf_range_diag_t, protobuf_range_diag_t, AUTO)
+
+
 PB_BIND(protobuf_packet_t, protobuf_packet_t, 2)
 
 
