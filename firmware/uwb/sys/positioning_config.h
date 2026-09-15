@@ -445,7 +445,45 @@
 #define SYS_FUSION_IMU_ZUPT_VEL_VARIANCE        1.0e-4f
 #endif
 
+/* ===================================================================
+ * RANGING DIAGNOSTICS STREAM (research data collection)
+ * =================================================================== */
 
+/* Tag only. 1 = after each ranging cycle, send one range_diag_t packet per
+ * configured anchor to the BLE host (DW1000 RX diagnostics of the RESP frame
+ * plus the RESULT summaries). Adds CIR_PWR and RXPACC_NOSAT register reads to
+ * every RX frame. 0 = no extra register reads and no extra packets. */
+#ifndef SYS_RANGING_DIAG_STREAM_ENABLE
+#define SYS_RANGING_DIAG_STREAM_ENABLE           0
+#endif
+
+/* Requires SYS_RANGING_DIAG_STREAM_ENABLE. 1 = read a CIR window around the
+ * first path of one RESP per cycle, before RX is re-armed; the target anchor
+ * rotates through the configured anchor list. */
+#ifndef SYS_RANGING_DIAG_CIR_ENABLE
+#define SYS_RANGING_DIAG_CIR_ENABLE              0
+#endif
+
+/* CIR window: samples before the integer first-path index and total samples
+ * (1 sample ~ 1 ns ~ 0.3 m). Total samples x 4 bytes must fit range_diag_t.cir
+ * (max_size 128); 28 keeps a typical CIR packet under PROTOBUF_PACKET_WARN_BYTES. */
+#ifndef SYS_RANGING_DIAG_CIR_PRE_SAMPLES
+#define SYS_RANGING_DIAG_CIR_PRE_SAMPLES         8U
+#endif
+
+#ifndef SYS_RANGING_DIAG_CIR_SAMPLES
+#define SYS_RANGING_DIAG_CIR_SAMPLES             28U
+#endif
+
+/* Maximum range_diag_t packets per SensorFusion loop iteration; bounds the
+ * blocking time added to the host UART. */
+#ifndef SYS_RANGING_DIAG_MAX_PKTS_PER_LOOP
+#define SYS_RANGING_DIAG_MAX_PKTS_PER_LOOP       2U
+#endif
+
+#if SYS_RANGING_DIAG_CIR_ENABLE && !SYS_RANGING_DIAG_STREAM_ENABLE
+#error "SYS_RANGING_DIAG_CIR_ENABLE requires SYS_RANGING_DIAG_STREAM_ENABLE"
+#endif
 
 /* ===================================================================
  * ERROR HANDLING

@@ -19,6 +19,10 @@
 #include "sys_config.h"
 #include "sys_logger.h"
 #include "sys_ranging.h"
+#if SYS_RANGING_DIAG_STREAM_ENABLE
+#include "network/network_cmd.h"
+#include "serial/ble_bridge.h"
+#endif
 
 #include <stdint.h>
 #include <stdio.h>
@@ -715,5 +719,90 @@ void app_tag_reset_fusion(void)
     app_rtos_request_sensor_fusion_reset();
 #endif
 }
+
+#if SYS_RANGING_DIAG_STREAM_ENABLE
+/* Research diagnostics stream ------------------------------------------ */
+extern network_core_t g_network_core;
+
+_Static_assert((SYS_RANGING_DIAG_CIR_SAMPLES * 4U) <= sizeof(((protobuf_range_diag_t *) 0)->cir.bytes),
+               "SYS_RANGING_DIAG_CIR_SAMPLES does not fit range_diag_t.cir");
+
+static void fill_range_diag(const sys_ranging_cycle_diag_t *cycle,
+                            const sys_ranging_link_diag_t *link,
+                            protobuf_range_diag_t *out)
+{
+    const bsp_uwb_rx_quality_t *q = &link->resp_quality;
+    const float distance_mm = link->distance_m * 1000.0f;
+
+    memset(out, 0, sizeof(*out));
+    out->cycle_id           = cycle->cycle_id;
+    out->seq                = cycle->sequence_num;
+    out->timestamp_ms       = cycle->timestamp_ms;
+    out->anchor_id          = link->anchor_id;
+    out->distance_mm        = link->result_valid
+                              ? (int32_t)(distance_mm + ((distance_mm >= 0.0f) ? 0.5f : -0.5f))
+                              : 0;
+    out->result_valid       = link->result_valid;
+    out->resp_valid         = link->resp_valid;
+    out->a_fp_amp_norm_q8   = link->a_fp_amp_norm_q8;
+    out->a_fp_snr_q8        = link->a_fp_snr_q8;
+    out->a_fp_confidence_q8 = link->a_fp_confidence_q8;
+    out->fp_amp1            = q->fp_amp1;
+    out->fp_amp2            = q->fp_amp2;
+    out->fp_amp3            = q->fp_amp3;
+    out->std_noise          = q->std_noise;
+    out->rxpacc             = q->rx_pream_count;
+    out->rxpacc_nosat       = q->rx_pream_count_nosat;
+    out->cir_pwr            = q->cir_power;
+    out->fp_index_q6        = q->first_path_index_q6;
+    out->peak_path_index    = q->peak_path_index;
+    out->peak_path_amp      = q->peak_path_amp;
+    out->lde_threshold      = q->lde_threshold;
+    out->link_count         = cycle->link_count;
+
+    if (cycle->cir.valid && cycle->cir_anchor_id == link->anchor_id) {
+        uint32_t size = (uint32_t)cycle->cir.sample_count * 4U;
+        if (size > sizeof(out->cir.bytes)) {
+            size = sizeof(out->cir.bytes);
+        }
+        memcpy(out->cir.bytes, cycle->cir.data, size);
+        out->cir.size        = (pb_size_t)size;
+        out->cir_start_index = cycle->cir.start_index;
+        out->cir_read_us     = cycle->cir.read_us;
+    }
+}
+
+void app_tag_range_diag_stream(void)
+{
+    static sys_ranging_cycle_diag_t s_cycle;
+    static uint8_t  s_next_link       = 0U;
+    static bool     s_pending         = false;
+    static uint32_t s_pkt_seq         = 0U;
+    static uint32_t s_link_drop_count = 0U;
+
+    /* Newest cycle wins: links of an older cycle not yet sent are counted as
+     * dropped instead of delaying the new cycle. */
+    uint8_t unsent = s_pending ? (uint8_t)(s_cycle.link_count - s_next_link) : 0U;
+    if (sys_ranging_tag_get_cycle_diag(&s_cycle)) {
+        s_link_drop_count += unsent;
+        s_next_link = 0U;
+        s_pending   = (s_cycle.link_count > 0U);
+    }
+
+    for (uint32_t sent = 0U; s_pending && sent < SYS_RANGING_DIAG_MAX_PKTS_PER_LOOP; sent++) {
+        static protobuf_range_diag_t msg; /* SensorFusion task only; keeps stack flat */
+        fill_range_diag(&s_cycle, &s_cycle.links[s_next_link], &msg);
+        msg.pkt_seq            = ++s_pkt_seq;
+        msg.link_drop_count    = s_link_drop_count;
+        msg.uart_tx_fail_count = g_ble_bridge_diag.tx_failed;
+        (void)network_send_range_diag(&g_network_core, protobuf_PACKET_ADDR_HOST, &msg);
+
+        s_next_link++;
+        if (s_next_link >= s_cycle.link_count) {
+            s_pending = false;
+        }
+    }
+}
+#endif /* SYS_RANGING_DIAG_STREAM_ENABLE */
 
 /* End of file -------------------------------------------------------- */

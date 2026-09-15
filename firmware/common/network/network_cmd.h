@@ -27,6 +27,7 @@ bool network_send_ble_adv_status(network_core_t *stream, uint8_t dst, const prot
 #endif
 bool network_send_sensor_fusion_result(network_core_t *stream, uint8_t dst, const protobuf_sensor_fusion_result_t *data);
 bool network_send_calib_data(network_core_t *stream, uint8_t dst, const protobuf_calib_data_t *data);
+bool network_send_range_diag(network_core_t *stream, uint8_t dst, const protobuf_range_diag_t *data);
 #ifndef BOOTLOADER
 bool network_send_pm_telemetry(network_core_t *stream, uint8_t dst);
 bool network_send_rtos_resource(network_core_t *stream, uint8_t dst);

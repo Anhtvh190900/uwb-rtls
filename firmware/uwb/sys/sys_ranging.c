@@ -15,6 +15,9 @@
 #include "smf.h"
 #include "sys_config.h"
 #include "sys_logger.h"
+#if SYS_RANGING_DIAG_STREAM_ENABLE
+#include "cmsis_os2.h"
+#endif
 
 #include <math.h>
 #include <stddef.h>
@@ -427,12 +430,116 @@ static anchor_smart_runtime_t s_anchor_smart                  = { 0 };
 static anchor_poll_rx_plan_t  s_anchor_poll_rx_plan           = { 0 };
 static uint32_t               s_anchor_discovery_jitter_state = 0U;
 static bool                   s_anchor_transaction_poll_seen  = false;
+#if SYS_RANGING_DIAG_STREAM_ENABLE
+static uint32_t                 s_tag_cycle_id                            = 0U;
+static uint8_t                  s_tag_cir_anchor_id                       = 0U;
+static bsp_uwb_rx_quality_t     s_tag_resp_quality[MAX_ANCHORS_SUPPORTED] = { { 0 } };
+static sys_ranging_cycle_diag_t s_tag_cycle_diag                          = { 0 };
+static uint32_t                 s_tag_cycle_diag_read_id                  = 0U;
+static bool                     s_tag_cycle_diag_valid                    = false;
+#endif
 
 /* Context accessors -------------------------------------------------- */
 static dstwr_session_ctx_t *dstwr_ctx(void)
 {
   return &s_uwb_session.protocol_ctx.dstwr;
 }
+
+#if SYS_RANGING_DIAG_STREAM_ENABLE
+/* Research diagnostics (range_diag_t) -------------------------------- */
+#if SYS_RANGING_DIAG_CIR_ENABLE
+_Static_assert(SYS_RANGING_DIAG_CIR_SAMPLES <= BSP_UWB_CIR_WINDOW_MAX_SAMPLES,
+               "SYS_RANGING_DIAG_CIR_SAMPLES exceeds BSP_UWB_CIR_WINDOW_MAX_SAMPLES");
+#endif
+
+/* Called once per Tag transaction before POLL: clears per-link RX diagnostics
+ * and arms the CIR capture for this cycle's target anchor. */
+static void tag_cycle_diag_begin(void)
+{
+  s_tag_cycle_id++;
+  memset(s_tag_resp_quality, 0, sizeof(s_tag_resp_quality));
+  s_tag_cir_anchor_id = 0U;
+
+#if SYS_RANGING_DIAG_CIR_ENABLE
+  if (s_uwb_session.peer_ids == NULL || s_uwb_session.peer_count == 0U)
+  {
+    bsp_uwb_cir_disarm();
+    return;
+  }
+  s_tag_cir_anchor_id = s_uwb_session.peer_ids[s_tag_cycle_id % s_uwb_session.peer_count];
+  /* resp_msg_t starts with msg_type, sequence_num, anchor_id. */
+  const uint8_t match[3] = { MW_DSTWR_MSG_TYPE_RESP, s_ctx.sequence_num, s_tag_cir_anchor_id };
+  bsp_uwb_cir_arm(match, (uint8_t) sizeof(match), SYS_RANGING_DIAG_CIR_PRE_SAMPLES, SYS_RANGING_DIAG_CIR_SAMPLES);
+#endif
+}
+
+static void tag_cycle_diag_store_resp(uint8_t idx, const bsp_uwb_rx_quality_t *quality)
+{
+  if (quality != NULL && idx < MAX_ANCHORS_SUPPORTED)
+  {
+    s_tag_resp_quality[idx] = *quality;
+  }
+}
+
+/* Called when a Tag cycle completes: publishes one snapshot for the host
+ * stream, read by another task through sys_ranging_tag_get_cycle_diag(). */
+static void tag_cycle_diag_publish(void)
+{
+  uint8_t link_count = s_uwb_session.peer_count;
+  if (link_count > MAX_ANCHORS_SUPPORTED)
+  {
+    link_count = MAX_ANCHORS_SUPPORTED;
+  }
+  if (s_uwb_session.peer_ids == NULL)
+  {
+    link_count = 0U;
+  }
+
+  int32_t                   lock = osKernelLock();
+  sys_ranging_cycle_diag_t *d    = &s_tag_cycle_diag;
+  memset(d, 0, sizeof(*d));
+  d->cycle_id      = s_tag_cycle_id;
+  d->timestamp_ms  = HAL_GetTick();
+  d->sequence_num  = s_ctx.sequence_num;
+  d->link_count    = link_count;
+  d->cir_anchor_id = s_tag_cir_anchor_id;
+
+  for (uint8_t i = 0; i < link_count; i++)
+  {
+    sys_ranging_link_diag_t *link = &d->links[i];
+    link->anchor_id               = s_uwb_session.peer_ids[i];
+    link->resp_valid              = dstwr_ctx()->anchor_resp[i].valid;
+    link->resp_quality            = s_tag_resp_quality[i];
+
+    for (uint8_t r = 0; r < s_ctx.result_multi.count; r++)
+    {
+      const sys_ranging_result_t *res = &s_ctx.result_multi.results[r];
+      if (res->anchor_id == link->anchor_id)
+      {
+        link->result_valid       = res->valid;
+        link->distance_m         = res->distance_m;
+        link->a_fp_amp_norm_q8   = res->fp_amp_norm_q8;
+        link->a_fp_snr_q8        = res->fp_snr_q8;
+        link->a_fp_confidence_q8 = res->fp_confidence_q8;
+        break;
+      }
+    }
+
+#if SYS_RANGING_DIAG_CIR_ENABLE
+    if (link->resp_valid && link->anchor_id == s_tag_cir_anchor_id)
+    {
+      (void) bsp_uwb_cir_take(dstwr_ctx()->anchor_resp[i].resp_rx_ts, &d->cir);
+    }
+#endif
+  }
+  s_tag_cycle_diag_valid = true;
+  (void) osKernelRestoreLock(lock);
+
+#if SYS_RANGING_DIAG_CIR_ENABLE
+  bsp_uwb_cir_disarm();
+#endif
+}
+#endif /* SYS_RANGING_DIAG_STREAM_ENABLE */
 
 /* Private function declarations ------------------------------------- */
 static void     anchor_smart_enter_discovery(uint32_t now_tick, bool log_transition);
@@ -711,6 +818,9 @@ static void ranging_transaction_reset(void)
   s_uwb_session.transaction_initialized = false;
   bsp_uwb_clear_event();
   bsp_uwb_idle();
+#if SYS_RANGING_DIAG_CIR_ENABLE
+  bsp_uwb_cir_disarm();
+#endif
 }
 
 static void anchor_smart_reset_runtime(void)
@@ -921,7 +1031,9 @@ static bool event_tag_ingest_resp_payload(const uint8_t              *data,
                                           uint8_t                     num_anchors,
                                           const uint8_t              *anchor_ids)
 {
+#if !SYS_RANGING_DIAG_STREAM_ENABLE
   (void) quality;
+#endif
 
   if (!validate_msg_type(data, len, MW_DSTWR_MSG_TYPE_RESP))
   {
@@ -959,6 +1071,9 @@ static bool event_tag_ingest_resp_payload(const uint8_t              *data,
   dstwr_ctx()->anchor_resp[idx].resp_tx_ts &= DW_MASK_40;
   dstwr_ctx()->anchor_resp[idx].valid = true;
   dstwr_ctx()->num_responses++;
+#if SYS_RANGING_DIAG_STREAM_ENABLE
+  tag_cycle_diag_store_resp((uint8_t) idx, quality);
+#endif
   RANGING_LOG_D(LOG_OBJECT_CODE_RANGING, "[TAG] Got RESP from anchor %u", resp->anchor_id);
   return true;
 }
@@ -1211,6 +1326,9 @@ static sys_ranging_err_t event_tag_complete_with_results(void)
   s_ctx.has_result                = true;
   s_ctx.state                     = STATE_TAG_COMPLETE;
   s_ctx.result_multi.sequence_num = s_ctx.sequence_num;
+#if SYS_RANGING_DIAG_STREAM_ENABLE
+  tag_cycle_diag_publish();
+#endif
   return SYS_RANGING_OK;
 }
 
@@ -1566,6 +1684,9 @@ static smf_state_result_t tag_tx_poll_run(void *obj)
       tdma_init(&s_tdma_tag, TDMA_ROLE_TAG, 0, session->peer_count, session->peer_ids);
     }
     session->transaction_initialized = true;
+#if SYS_RANGING_DIAG_STREAM_ENABLE
+    tag_cycle_diag_begin();
+#endif
   }
 
   poll_msg_t poll_msg   = { 0 };
@@ -2889,6 +3010,25 @@ sys_ranging_err_t sys_ranging_tag_get_results_tdma(sys_ranging_multi_result_t *r
   ranging_transaction_reset();
   return SYS_RANGING_OK;
 }
+
+#if SYS_RANGING_DIAG_STREAM_ENABLE
+bool sys_ranging_tag_get_cycle_diag(sys_ranging_cycle_diag_t *out)
+{
+  if (!out)
+    return false;
+
+  bool    fresh = false;
+  int32_t lock  = osKernelLock();
+  if (s_tag_cycle_diag_valid && s_tag_cycle_diag.cycle_id != s_tag_cycle_diag_read_id)
+  {
+    *out                     = s_tag_cycle_diag;
+    s_tag_cycle_diag_read_id = s_tag_cycle_diag.cycle_id;
+    fresh                    = true;
+  }
+  (void) osKernelRestoreLock(lock);
+  return fresh;
+}
+#endif
 
 sys_ranging_err_t sys_ranging_anchor_start_tdma(uint8_t        anchor_id,
                                                 uint8_t        num_anchors,

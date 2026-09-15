@@ -15,6 +15,7 @@
 #include <stdbool.h>
 #include "config.h"
 #include "positioning_config.h"
+#include "bsp_uwb.h"
 
 /* Public types ------------------------------------------------------ */
 typedef enum
@@ -56,6 +57,36 @@ typedef struct
   uint8_t count;          /* Number of valid results */
   uint8_t sequence_num;   /* Sequence number */
 } sys_ranging_multi_result_t;
+
+/**
+ * @brief Research diagnostics of one Tag-Anchor link in a completed cycle
+ *        (produced when SYS_RANGING_DIAG_STREAM_ENABLE != 0).
+ */
+typedef struct
+{
+  uint8_t              anchor_id;
+  bool                 resp_valid;         /* Tag received this anchor's RESP */
+  bool                 result_valid;       /* Tag accepted this anchor's RESULT */
+  float                distance_m;         /* RESULT distance */
+  uint16_t             a_fp_amp_norm_q8;   /* Anchor-side summaries carried by RESULT */
+  uint16_t             a_fp_snr_q8;
+  uint8_t              a_fp_confidence_q8;
+  bsp_uwb_rx_quality_t resp_quality;       /* Tag-side RX diagnostics of the RESP frame */
+} sys_ranging_link_diag_t;
+
+/**
+ * @brief Research diagnostics of one completed Tag ranging cycle.
+ */
+typedef struct
+{
+  uint32_t                cycle_id;        /* Tag cycles started since boot */
+  uint32_t                timestamp_ms;    /* HAL tick when the cycle completed */
+  uint8_t                 sequence_num;    /* On-air DS-TWR sequence number */
+  uint8_t                 link_count;      /* Entries used in links[] (configured anchors) */
+  uint8_t                 cir_anchor_id;   /* Anchor targeted for CIR this cycle, 0 = none */
+  sys_ranging_link_diag_t links[MAX_ANCHORS_SUPPORTED];
+  bsp_uwb_cir_window_t    cir;             /* Valid when the targeted RESP was captured */
+} sys_ranging_cycle_diag_t;
 
 /**
  * @brief Ranging configuration
@@ -112,6 +143,17 @@ sys_ranging_err_t sys_ranging_tag_process_tdma(uint8_t num_anchors,
  * @return SYS_RANGING_OK if results available
  */
 sys_ranging_err_t sys_ranging_tag_get_results_tdma(sys_ranging_multi_result_t *results);
+
+#if SYS_RANGING_DIAG_STREAM_ENABLE
+/**
+ * @brief Copy the diagnostics of the latest completed Tag cycle if it is newer
+ *        than the last copy returned.
+ * @note  Safe to call from a task other than UwbRanging.
+ * @param out Output cycle diagnostics
+ * @return true when @p out received a new cycle.
+ */
+bool sys_ranging_tag_get_cycle_diag(sys_ranging_cycle_diag_t *out);
+#endif
 
 /**
  * @brief Get last anchor ranging result

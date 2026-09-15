@@ -48,6 +48,15 @@ void app_tag_reset_fusion(void);
  */
 bool app_tag_get_latest_position(float *x_m, float *y_m);
 
+#if SYS_RANGING_DIAG_STREAM_ENABLE
+/**
+ * @brief Send range_diag_t packets of the latest completed ranging cycle.
+ * @note  Call from the SensorFusion task, which owns the host streams. Sends at
+ *        most SYS_RANGING_DIAG_MAX_PKTS_PER_LOOP packets per call.
+ */
+void app_tag_range_diag_stream(void);
+#endif
+
 #endif /* __APP_TAG_H */
 
 /* End of file -------------------------------------------------------- */
