@@ -11,6 +11,7 @@ This directory contains the comprehensive technical documentation for the **UWB-
 | Section | Document | Description |
 | --- | --- | --- |
 | **Setup & Build** | **[Getting Started Guide](getting_started.md)** | Step-by-step toolchain setup, `GCC_PATH` configuration, and build instructions |
+| **Setup & Build** | **[Vehicle Embedded Platform](vehicle_embedded_platform.md)** | Headless build, flash and data-capture setup on the Jetson Orin (ARM64), without STM32CubeIDE |
 | **Firmware** | **[Firmware Architecture](firmware/architecture.md)** | Embedded layers, FreeRTOS runtime tasks, role selection, and source map |
 | **Firmware** | **[DS-TWR Ranging Protocol](firmware/ranging_protocol.md)** | Timestamp mechanics, TDMA frame timing budget, and failure handling |
 | **Firmware** | **[Positioning Algorithms](firmware/positioning_algorithms.md)** | Mahalanobis prefiltering, Huber weighting, WGDOP selection, and 8-State UKF |

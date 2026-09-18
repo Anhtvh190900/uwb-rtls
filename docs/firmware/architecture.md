@@ -106,6 +106,25 @@ UwbRanging / app_tag
 
 `SensorFusion` exits immediately on an Anchor. Therefore Anchor firmware keeps the ranging, network, monitoring, I/O and power tasks but does not allocate runtime CPU to the positioning loop.
 
+### Fusion Telemetry Publication
+
+The final `publish fusion telemetry` step fans one `sensor_fusion_result` out to two destinations, because the fused pose has two independent consumers: the desktop RTLS Studio and the vehicle controller riding on the Tag.
+
+| Destination | TX stream | Consumer |
+|---|---|---|
+| `PACKET_ADDR_HOST` | `STREAM_BLE_TX` (BLE bridge) | desktop tooling |
+| `PACKET_ADDR_VEHICLE` | `STREAM_SERIAL_TX` while a wired session is live, otherwise `STREAM_BLE_TX` | on-vehicle controller |
+
+Three conditions gate every send, in `network_send_sensor_fusion_result`:
+
+1. **Ranging enabled** — the stream exists only inside a ranging session.
+2. **A live host session** — `network_cmd_host_active()`, satisfied by *either* transport. A packet with `src = PACKET_ADDR_DEBUG` or `src = PACKET_ADDR_VEHICLE` marks the serial link live; `src = PACKET_ADDR_HOST` marks the BLE link live. Sessions close symmetrically on `end_session`.
+3. **Pacing** — at most one packet per `SENSOR_FUSION_STREAM_PERIOD_MS` (20 ms).
+
+The pacing budget is kept **per destination** (`s_last_sensor_fusion_stream_tick[]`, indexed by `sf_stream_slot()`). This matters: the two sends of one sample happen back-to-back within the same fusion step, so a single shared tick would let the HOST send claim the whole 20 ms period and leave the VEHICLE send permanently starved.
+
+Pose fields are transmitted as fixed-point hundredths of a metre or degree; consumers scale by 100.
+
 ### Synchronization and Resource Ownership
 
 | RTOS object | Producer / requester | Consumer / owner | Contract |
@@ -148,6 +167,8 @@ UwbRanging / app_tag
 | ISR-to-task UWB signaling | `firmware/uwb/bsp/bsp_uwb.c` |
 | Completed range-frame producer | `firmware/uwb/app/app_tag.c` |
 | IMU queue and UKF ownership | `firmware/uwb/sys/sys_sensor_fusion.c` |
+| Telemetry gating, pacing and senders | `firmware/common/network/network_cmd.c` |
+| Address-to-stream routing and session flags | `firmware/common/network/network_core.c` |
 | Button ISR signaling | `firmware/uwb/bsp/bsp_io.c` |
 
 ## Continue Reading

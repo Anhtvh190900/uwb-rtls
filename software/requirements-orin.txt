@@ -1,0 +1,35 @@
+# Headless profile for the vehicle embedded platform (Jetson Orin, aarch64).
+#
+# The Orin runs no GUI: RTLS Studio, the Programmer and the simulation tools all
+# stay on a desktop machine. What is left is the protocol layer plus a serial
+# link, which is everything a data-collection or debug script needs.
+#
+# This list was derived by reading the actual imports of software/common/ and
+# software/vv_testings/, not by trimming requirements.txt by hand.
+#
+# Install with:  python3 install.py --profile orin
+
+protobuf>=6.31.1     # google.protobuf - common/protocol_pb2.py (gencode 6.31.1)
+pyserial>=3.5        # serial - common/transport.py, vv_testings/*
+
+
+# ---------------------------------------------------------------------------
+# Optional: uncomment if your own analysis scripts need them.
+# Both have aarch64 wheels and install cleanly on the Orin.
+# ---------------------------------------------------------------------------
+# numpy>=2.0.0
+# matplotlib>=3.8.0    # headless: use matplotlib.use("Agg") before pyplot
+
+
+# ---------------------------------------------------------------------------
+# Deliberately NOT here - notes for anyone tempted to add the desktop GUI deps
+# to an ARM64 board later:
+#
+#   PyOpenGL_accelerate  no aarch64 wheel on PyPI at all; source-only, so it
+#                        needs a C toolchain and Python headers to build.
+#   PySide6              aarch64 has exactly one version, 6.8.0.2. Newer
+#                        releases are x86_64/macOS only, so `PySide6>=6.6`
+#                        silently resolves to 6.8.0.2 here and cannot move.
+#   PyQt6 / PyQt5        these do ship current aarch64 wheels, but still need a
+#                        display; pointless on a headless vehicle platform.
+# ---------------------------------------------------------------------------
