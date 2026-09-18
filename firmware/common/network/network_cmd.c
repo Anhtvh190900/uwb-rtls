@@ -146,9 +146,23 @@ static network_log_tracker_t s_log_tracker = {
 
 static bool    s_log_stream_enabled = false;
 static uint8_t s_log_stream_dst     = protobuf_PACKET_ADDR_HOST;
-static uint32_t s_last_sensor_fusion_stream_tick = 0u;
 float dt_s = 0.0f;
 uint32_t stream_packet_cnt = 0;
+
+/* Stream pacing is tracked per destination: the HOST and VEHICLE copies of one
+ * sample are sent back-to-back, so a single shared tick would let the first send
+ * consume the whole period and starve the second one forever. */
+#define SF_STREAM_SLOT_HOST     0u
+#define SF_STREAM_SLOT_VEHICLE  1u
+#define SF_STREAM_SLOT_COUNT    2u
+
+static uint32_t s_last_sensor_fusion_stream_tick[SF_STREAM_SLOT_COUNT] = {0u, 0u};
+
+static uint32_t sf_stream_slot(uint8_t dst)
+{
+    return (dst == protobuf_PACKET_ADDR_VEHICLE) ? SF_STREAM_SLOT_VEHICLE
+                                                 : SF_STREAM_SLOT_HOST;
+}
 
 /* ---- Command dispatch table ----
  * Sparse, indexed by protobuf tag via CMD_INFO.
@@ -719,7 +733,7 @@ static void network_cmd_ranging_stop(const protobuf_packet_t *pkt)
     }
     dt_s = 0.0f;
 	stream_packet_cnt = 0u;
-	s_last_sensor_fusion_stream_tick = 0u;
+	memset(s_last_sensor_fusion_stream_tick, 0, sizeof(s_last_sensor_fusion_stream_tick));
 }
 
 #endif /* !BOOTLOADER */
@@ -1378,13 +1392,14 @@ static void network_cmd_end_session(const protobuf_packet_t *pkt)
     s_log_stream_enabled = false;
     dt_s = 0.0f;
     stream_packet_cnt = 0u;
-    s_last_sensor_fusion_stream_tick = 0u;
+    memset(s_last_sensor_fusion_stream_tick, 0, sizeof(s_last_sensor_fusion_stream_tick));
 
     switch (reason) {
         case protobuf_SESSION_END_REASON_LOG_DATA:
             RLOG_I(OBJECT_CODE, "Log streaming stopped");
             /* Also reset connection flag for LOG_DATA as it is usually the primary session */
-            if(pkt->hdr.addr.src == protobuf_PACKET_ADDR_DEBUG) {
+            if (pkt->hdr.addr.src == protobuf_PACKET_ADDR_DEBUG ||
+                pkt->hdr.addr.src == protobuf_PACKET_ADDR_VEHICLE) {
                 s_network_cmd.stream->serial_connection_active = false;
             }
             s_log_tracker.waiting_ack = false;
@@ -1403,7 +1418,8 @@ static void network_cmd_end_session(const protobuf_packet_t *pkt)
             break;
 
         default:
-            if (pkt->hdr.addr.src == protobuf_PACKET_ADDR_DEBUG) {
+            if (pkt->hdr.addr.src == protobuf_PACKET_ADDR_DEBUG ||
+                pkt->hdr.addr.src == protobuf_PACKET_ADDR_VEHICLE) {
                 s_network_cmd.stream->serial_connection_active = false;
             } else if (pkt->hdr.addr.src == protobuf_PACKET_ADDR_HOST) {
                 s_network_cmd.stream->ble_connection_active = false;
@@ -1600,13 +1616,13 @@ bool network_send_sensor_fusion_result(network_core_t *stream, uint8_t dst, cons
 {
     CHECK(stream && data, false);
     CHECK(network_cmd_is_ranging_enabled(), false);
-    CHECK(network_cmd_is_ble_host_active(), false);
+    CHECK(network_cmd_host_active(), false);
 
-
+    const uint32_t slot = sf_stream_slot(dst);
     uint32_t now = bsp_util_get_ticks();
-    CHECK((uint32_t)(now - s_last_sensor_fusion_stream_tick) >= SENSOR_FUSION_STREAM_PERIOD_MS, false);
+    CHECK((uint32_t)(now - s_last_sensor_fusion_stream_tick[slot]) >= SENSOR_FUSION_STREAM_PERIOD_MS, false);
 
-    dt_s = (float)(now - s_last_sensor_fusion_stream_tick) / 1000.0f;
+    dt_s = (float)(now - s_last_sensor_fusion_stream_tick[slot]) / 1000.0f;
 
     protobuf_packet_t pkt;
     memset(&pkt, 0, sizeof(pkt));
@@ -1614,7 +1630,7 @@ bool network_send_sensor_fusion_result(network_core_t *stream, uint8_t dst, cons
     pkt.params.sensor_fusion_result = *data;
 
     if (network_core_send_packet(stream, dst, &pkt)) {
-        s_last_sensor_fusion_stream_tick = now;
+        s_last_sensor_fusion_stream_tick[slot] = now;
         stream_packet_cnt++;
         return true;
     }
@@ -1626,12 +1642,13 @@ bool network_send_calib_data(network_core_t *stream, uint8_t dst, const protobuf
 {
     CHECK(stream && data, false);
     CHECK(network_cmd_is_ranging_enabled(), false);
-    CHECK(network_cmd_is_ble_host_active(), false);
+    CHECK(network_cmd_host_active(), false);
 
+    const uint32_t slot = sf_stream_slot(dst);
     uint32_t now = bsp_util_get_ticks();
-    CHECK((uint32_t)(now - s_last_sensor_fusion_stream_tick) >= SENSOR_FUSION_STREAM_PERIOD_MS, false);
+    CHECK((uint32_t)(now - s_last_sensor_fusion_stream_tick[slot]) >= SENSOR_FUSION_STREAM_PERIOD_MS, false);
 
-    dt_s = (float)(now - s_last_sensor_fusion_stream_tick) / 1000.0f;
+    dt_s = (float)(now - s_last_sensor_fusion_stream_tick[slot]) / 1000.0f;
 
     protobuf_packet_t pkt;
     memset(&pkt, 0, sizeof(pkt));
@@ -1639,7 +1656,7 @@ bool network_send_calib_data(network_core_t *stream, uint8_t dst, const protobuf
     pkt.params.calib_data = *data;
 
     if (network_core_send_packet(stream, dst, &pkt)) {
-        s_last_sensor_fusion_stream_tick = now;
+        s_last_sensor_fusion_stream_tick[slot] = now;
         stream_packet_cnt++;
         return true;
     }

@@ -1057,6 +1057,9 @@ void sys_sensor_fusion_stream_ble(uint8_t ukf_step)
     (void)network_send_sensor_fusion_result(&g_network_core,
                                             protobuf_PACKET_ADDR_HOST,
                                             &stream_data);
+    (void)network_send_sensor_fusion_result(&g_network_core,
+                                            protobuf_PACKET_ADDR_VEHICLE,
+                                            &stream_data);
 #else
     static uint32_t tx_frame_cnt = 0U;
     protobuf_calib_data_t stream_data;

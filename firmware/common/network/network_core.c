@@ -252,7 +252,10 @@ static bool network_core_process_one_stream(network_core_t *core, stream_type_t 
     }
 
     if (packet.has_hdr && packet.hdr.has_addr) {
-        if (packet.hdr.addr.src == protobuf_PACKET_ADDR_DEBUG) {
+        if (packet.hdr.addr.src == protobuf_PACKET_ADDR_DEBUG ||
+            packet.hdr.addr.src == protobuf_PACKET_ADDR_VEHICLE) {
+            /* Both the debug tool and the vehicle controller talk to us over the
+             * wired link, so either one marks the serial session as live. */
             core->serial_connection_active = true;
         } else if (packet.hdr.addr.src == protobuf_PACKET_ADDR_HOST) {
             core->ble_connection_active = true;
