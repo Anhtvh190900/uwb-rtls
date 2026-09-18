@@ -388,18 +388,18 @@ by 100 for you; a custom consumer must do the same.
 
 ## 8. Build & flash helper
 
-[`software/vehicle_testings/build&flash.py`](../software/vehicle_testings/build&flash.py)
+[`software/vv_testings/vehicle_testings/build&flash.py`](../software/vv_testings/vehicle_testings/build&flash.py)
 wraps the day-to-day loop — rebuild the Tag firmware, put the Tag into DFU mode, flash it —
 into a menu, so you do not have to remember the sequence or press the boot button.
 
 ```bash
 source software/.venv/bin/activate
 export GCC_PATH=/usr/bin
-python3 'software/vehicle_testings/build&flash.py'
+python3 'software/vv_testings/vehicle_testings/build&flash.py'
 ```
 
 > Quote the filename. `&` is a shell metacharacter, so bare
-> `python3 software/vehicle_testings/build&flash.py` will not work — use quotes as above, or
+> `python3 software/vv_testings/vehicle_testings/build&flash.py` will not work — use quotes as above, or
 > escape it as `build\&flash.py`.
 
 ```
@@ -434,9 +434,9 @@ is, and whether the Tag is currently running, already in DFU mode, or not detect
 For scripting or a CI job, skip the menu:
 
 ```bash
-python3 'software/vehicle_testings/build&flash.py' --build
-python3 'software/vehicle_testings/build&flash.py' --flash
-python3 'software/vehicle_testings/build&flash.py' --all
+python3 'software/vv_testings/vehicle_testings/build&flash.py' --build
+python3 'software/vv_testings/vehicle_testings/build&flash.py' --flash
+python3 'software/vv_testings/vehicle_testings/build&flash.py' --all
 ```
 
 These exit non-zero on failure.
@@ -454,7 +454,7 @@ means the script is broken. Run the diagnostic instead of guessing:
 
 ```bash
 source software/.venv/bin/activate
-python3 software/vehicle_testings/check_serial.py
+python3 software/vv_testings/vehicle_testings/check_serial.py
 ```
 
 It reports, in order: device nodes under `/dev`, what pyserial sees, the USB bus, group
@@ -462,8 +462,8 @@ membership and interference, then recent kernel USB messages — and ends with a
 the command to fix it.
 
 ```bash
-python3 software/vehicle_testings/check_serial.py --log     # always include the kernel log
-python3 software/vehicle_testings/check_serial.py --watch   # live log; plug the board in now
+python3 software/vv_testings/vehicle_testings/check_serial.py --log     # always include the kernel log
+python3 software/vv_testings/vehicle_testings/check_serial.py --watch   # live log; plug the board in now
 ```
 
 `--watch` is the fastest way to tell a dead cable from a dead board: if nothing at all
