@@ -1,0 +1,11 @@
+# Vendored ST driver code (CMSIS Core, CMSIS Device F4, STM32F4xx HAL).
+#
+# Do not reformat anything under this directory. These files must stay
+# byte-identical to the pinned upstream sources so that
+# tools/sync_st_drivers.py can verify and refresh them.
+#
+# An editor formatting stm32f411xe.h on save is exactly how this tree
+# drifted from upstream once already.
+---
+DisableFormat: true
+SortIncludes: Never

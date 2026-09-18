@@ -62,6 +62,9 @@ software/uwb_rtls_studio/data/runtime/
 # Simulation cache
 .simulation_metadata_cache.json
 
+# Upstream ST driver checkouts fetched by tools/sync_st_drivers.py
+.st-cache/
+
 # MkDocs and local temp files
 site/
 output/

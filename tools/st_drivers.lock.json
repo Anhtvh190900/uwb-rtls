@@ -1,0 +1,54 @@
+{
+  "_comment": [
+    "Pinned upstream sources for the vendored ST driver code under firmware/*/Drivers.",
+    "These commits are exactly what STM32CubeF4 v1.28.3 pins, which is the firmware",
+    "package declared by the .ioc files (ProjectManager.FirmwarePackage).",
+    "",
+    "ST splits the drivers across three places: CMSIS Core ships inside the",
+    "STM32CubeF4 tree itself, while the CMSIS device headers and the HAL driver",
+    "are separate git submodules. That is why each has its own entry here.",
+    "",
+    "To move to another CubeF4 release, run:  sync_st_drivers.py --resolve v1.28.4",
+    "which rewrites this file from that tag, then review the resulting diff."
+  ],
+
+  "expected_hal_version": "1.8.5",
+
+  "components": {
+    "cube_f4": {
+      "repo": "https://github.com/STMicroelectronics/STM32CubeF4.git",
+      "tag": "v1.28.3",
+      "commit": "94cae6e83f00e276a11957e7833c01ac3d0bd7af",
+      "sparse": [
+        "Drivers/CMSIS/Include/*",
+        "Drivers/CMSIS/LICENSE.txt"
+      ]
+    },
+    "cmsis_device": {
+      "repo": "https://github.com/STMicroelectronics/cmsis_device_f4.git",
+      "commit": "3c77349ce04c8af401454cc51f85ea9a50e34fc1",
+      "submodule_path": "Drivers/CMSIS/Device/ST/STM32F4xx"
+    },
+    "hal_driver": {
+      "repo": "https://github.com/STMicroelectronics/stm32f4xx_hal_driver.git",
+      "commit": "b6f0ed3829f3829eb358a2e7417d80bba1a42db7",
+      "submodule_path": "Drivers/STM32F4xx_HAL_Driver"
+    }
+  },
+
+  "projects": [
+    "firmware/uwb",
+    "firmware/bootloader1"
+  ],
+
+  "mappings": [
+    { "component": "cube_f4",      "upstream": "Drivers/CMSIS",        "local": "Drivers/CMSIS" },
+    { "component": "cube_f4",      "upstream": "Drivers/CMSIS/Include", "local": "Drivers/CMSIS/Include" },
+    { "component": "cmsis_device", "upstream": ".",                    "local": "Drivers/CMSIS/Device/ST/STM32F4xx" },
+    { "component": "cmsis_device", "upstream": "Include",              "local": "Drivers/CMSIS/Device/ST/STM32F4xx/Include" },
+    { "component": "hal_driver",   "upstream": ".",                    "local": "Drivers/STM32F4xx_HAL_Driver" },
+    { "component": "hal_driver",   "upstream": "Inc",                  "local": "Drivers/STM32F4xx_HAL_Driver/Inc" },
+    { "component": "hal_driver",   "upstream": "Inc/Legacy",           "local": "Drivers/STM32F4xx_HAL_Driver/Inc/Legacy" },
+    { "component": "hal_driver",   "upstream": "Src",                  "local": "Drivers/STM32F4xx_HAL_Driver/Src" }
+  ]
+}

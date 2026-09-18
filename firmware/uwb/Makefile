@@ -23,7 +23,7 @@ CC := $(TOOLCHAIN_BIN)/arm-none-eabi-gcc
 AS := $(TOOLCHAIN_BIN)/arm-none-eabi-gcc
 OBJCOPY := $(TOOLCHAIN_BIN)/arm-none-eabi-objcopy
 SIZE := $(TOOLCHAIN_BIN)/arm-none-eabi-size
-PYTHON ?= python
+PYTHON ?= python3
 
 CPUFLAGS := -mcpu=cortex-m4 -mthumb -mfpu=fpv4-sp-d16 -mfloat-abi=hard
 OPTFLAGS := -O2 -g3
@@ -44,7 +44,13 @@ FW_IMAGE_META_SCRIPT := tools/generate_fw_image_meta.py
 
 # Version is updated by firmware/uwb/tools/update_version.py before build
 
-.PHONY: all clean rebuild patch_fota_header
+.PHONY: all clean rebuild patch_fota_header flash size
+
+# DFU flashing (bootloader1 exposes alt-0 "@App Flash" at MEM_APP_START)
+DFUUTIL ?= dfu-util
+DFU_VID_PID ?= 0483:df11
+DFU_ALT ?= 0
+DFU_ADDRESS ?= 0x0800C000
 
 # Build firmware
 all: $(TARGET).elf $(TARGET).hex $(TARGET).bin patch_fota_header
@@ -54,7 +60,6 @@ patch_fota_header: $(TARGET).hex $(TARGET).bin $(FOTA_PATCH_SCRIPT)
 	@$(PYTHON) $(FOTA_PATCH_SCRIPT) --hex $(TARGET).hex --bin $(TARGET).bin
 
 # Source discovery
-SRC_DIRS := Core/Src Drivers USB_DEVICE app bsp deca middlewares sys
 LOCAL_SOURCES := \
 	$(wildcard Core/Src/*.c) \
 	$(wildcard Drivers/CMSIS/*.c) $(wildcard Drivers/STM32F4xx_HAL_Driver/Src/*.c) $(wildcard Drivers/device_driver/*.c) \
@@ -114,11 +119,6 @@ PROTOCOL_OBJECTS := $(BUILD_DIR)/protocol/protos/protocol.pb.o \
 OBJECTS := $(LOCAL_OBJECTS) $(COMMON_OBJECTS) $(PROTOCOL_OBJECTS)
 OBJECTS += $(BUILD_DIR)/$(STARTUP:.s=.o)
 
-# Extract version from source for use in tag-release
-VERSION_MAJOR := $(shell grep '#define FW_VERSION_MAJOR' app/version.h | tail -1 | grep -o '[0-9]\+$$')
-VERSION_MINOR := $(shell grep '#define FW_VERSION_MINOR' app/version.h | tail -1 | grep -o '[0-9]\+$$')
-VERSION_PATCH := $(shell grep '#define FW_VERSION_PATCH' app/version.h | tail -1 | grep -o '[0-9]\+$$')
-
 $(FW_IMAGE_META_HEADER): $(FW_IMAGE_META_SCRIPT)
 	@mkdir -p $(GENERATED_DIR)
 	@$(PYTHON) $(FW_IMAGE_META_SCRIPT) \
@@ -164,5 +164,25 @@ clean:
 	rm -rf $(BUILD_DIR) build_obj
 
 rebuild: clean all
+
+size: $(TARGET).elf
+	@$(SIZE) $(TARGET).elf
+
+# Flash over USB DFU. Put the board in bootloader mode first, then run this.
+flash: $(TARGET).bin
+	@command -v $(DFUUTIL) >/dev/null 2>&1 || { \
+		echo "ERROR: '$(DFUUTIL)' not found."; \
+		echo "       Linux: sudo apt install dfu-util"; \
+		echo "       Or override with: make flash DFUUTIL=/path/to/dfu-util"; \
+		exit 1; }
+	@log=$$(mktemp); \
+	$(DFUUTIL) -d $(DFU_VID_PID) -a $(DFU_ALT) -s $(DFU_ADDRESS):leave -D $(TARGET).bin 2>&1 | tee "$$log"; \
+	ok=0; grep -q 'File downloaded successfully' "$$log" && ok=1; \
+	rm -f "$$log"; \
+	if [ $$ok -eq 1 ]; then \
+		echo "[flash] image written; device reset into the application"; \
+	else \
+		echo "[flash] FAILED"; exit 1; \
+	fi
 
 
