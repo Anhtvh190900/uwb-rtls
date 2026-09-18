@@ -40,12 +40,12 @@
 /**
  * @brief Tag height from ground (meters)
  */
-#define TAG_HEIGHT_M            (0.585f)
+#define TAG_HEIGHT_M            (0.077f)
 
 /**
  * @brief Anchor height from ground (meters)
  */
-#define ANCHOR_HEIGHT_M         (2.495f)
+#define ANCHOR_HEIGHT_M         (0.910f)
 
 /**
  * @brief Height offset between Anchor and Tag (meters)
@@ -58,7 +58,7 @@
 
 #define MAX_ANCHORS_SUPPORTED  8
 /* Maximum number of anchors participating in one zone/ranging cycle. */
-#define NUM_ANCHORS            6
+#define NUM_ANCHORS            4
 #if NUM_ANCHORS > MAX_ZONE_ANCHORS
 #error "NUM_ANCHORS exceeds protobuf zone-profile capacity"
 #endif
@@ -95,34 +95,34 @@
 
 /* Zone 1 Defaults */
 #define ZONE_1_ANCHOR_1_ID   1
-#define ZONE_1_ANCHOR_1_X    0.7f
-#define ZONE_1_ANCHOR_1_Y    0.03f
+#define ZONE_1_ANCHOR_1_X    -0.5f
+#define ZONE_1_ANCHOR_1_Y    -0.5f
 #define ZONE_1_ANCHOR_1_Z    ANCHOR_HEIGHT_M
 
 #define ZONE_1_ANCHOR_2_ID   2
-#define ZONE_1_ANCHOR_2_X    2.70f
-#define ZONE_1_ANCHOR_2_Y    8.37f
+#define ZONE_1_ANCHOR_2_X    10.026f
+#define ZONE_1_ANCHOR_2_Y    -0.5f
 #define ZONE_1_ANCHOR_2_Z    ANCHOR_HEIGHT_M
 
-#define ZONE_1_ANCHOR_3_ID   3
-#define ZONE_1_ANCHOR_3_X    7.5f
-#define ZONE_1_ANCHOR_3_Y    8.37f
+#define ZONE_1_ANCHOR_3_ID   3      
+#define ZONE_1_ANCHOR_3_X    -0.5f
+#define ZONE_1_ANCHOR_3_Y    10.026f
 #define ZONE_1_ANCHOR_3_Z    ANCHOR_HEIGHT_M
 
 #define ZONE_1_ANCHOR_4_ID   4
-#define ZONE_1_ANCHOR_4_X    7.5f
-#define ZONE_1_ANCHOR_4_Y    0.03f
+#define ZONE_1_ANCHOR_4_X    10.026f
+#define ZONE_1_ANCHOR_4_Y    10.026f
 #define ZONE_1_ANCHOR_4_Z    ANCHOR_HEIGHT_M
 
 #define ZONE_1_ANCHOR_5_ID   5
-#define ZONE_1_ANCHOR_5_X    4.3f
-#define ZONE_1_ANCHOR_5_Y    0.8f
-#define ZONE_1_ANCHOR_5_Z    0.88f
+#define ZONE_1_ANCHOR_5_X    0.0f
+#define ZONE_1_ANCHOR_5_Y    0.0f
+#define ZONE_1_ANCHOR_5_Z    0.0f
 
 #define ZONE_1_ANCHOR_6_ID   6
-#define ZONE_1_ANCHOR_6_X    4.3f
-#define ZONE_1_ANCHOR_6_Y    7.88f
-#define ZONE_1_ANCHOR_6_Z    1.44f
+#define ZONE_1_ANCHOR_6_X    0.0f
+#define ZONE_1_ANCHOR_6_Y    0.0f
+#define ZONE_1_ANCHOR_6_Z    0.0f
 
 /* Zone 2 is intentionally left unconfigured for now. */
 
