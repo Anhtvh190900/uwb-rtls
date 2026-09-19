@@ -1,0 +1,161 @@
+<!doctype html>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>K2 - bang dieu khien buoi thu</title>
+<style>
+  :root{--bg:#11151a;--card:#1b2129;--line:#2b3440;--fg:#e8eef5;--dim:#94a3b8;
+        --ok:#34d399;--warn:#fbbf24;--bad:#f87171;--go:#2563eb}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--fg);
+       font:15px/1.45 system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
+  .wrap{max-width:720px;margin:0 auto;padding:12px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:12px;
+        padding:14px;margin-bottom:12px}
+  h1{font-size:15px;margin:0 0 10px;color:var(--dim);font-weight:600;
+     text-transform:uppercase;letter-spacing:.06em}
+  .row-no{font-size:13px;color:var(--dim)}
+  .plan{font-size:26px;font-weight:700;margin:2px 0 8px;line-height:1.2}
+  .meta{display:flex;flex-wrap:wrap;gap:6px}
+  .tag{background:#0f172a;border:1px solid var(--line);border-radius:999px;
+       padding:3px 10px;font-size:13px;color:var(--dim)}
+  .note{margin-top:8px;color:var(--warn);font-size:14px}
+  .clock{font-size:62px;font-weight:800;text-align:center;letter-spacing:.02em;
+         font-variant-numeric:tabular-nums;margin:6px 0}
+  .clock.run{color:var(--ok)} .clock.idle{color:var(--dim)}
+  .btns{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+  button{font:600 17px system-ui;padding:16px 10px;border-radius:10px;
+         border:1px solid var(--line);background:#0f172a;color:var(--fg)}
+  button:disabled{opacity:.35}
+  .go{background:var(--go);border-color:var(--go)}
+  .stop{background:#7f1d1d;border-color:#991b1b}
+  .nav{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px}
+  .anchors{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;text-align:center}
+  .a{background:#0f172a;border:1px solid var(--line);border-radius:10px;padding:10px 4px}
+  .a b{display:block;font-size:17px}
+  .a small{color:var(--dim);font-size:12px}
+  .a.bad{border-color:var(--bad);background:#2a1414}
+  .a.bad b,.a.bad small{color:var(--bad)}
+  .kv{display:flex;justify-content:space-between;padding:3px 0;font-size:14px}
+  .kv span:first-child{color:var(--dim)}
+  #log{max-height:180px;overflow:auto;font-size:13px}
+  #log div{padding:3px 0;border-bottom:1px solid var(--line)}
+  .loi{color:var(--bad)} .ok{color:var(--ok)} .xong{color:var(--warn)}
+  @media(max-width:420px){.plan{font-size:22px}.clock{font-size:48px}}
+</style>
+<div class="wrap">
+  <div class="card">
+    <h1>Lần ghi hiện tại</h1>
+    <div class="row-no" id="rowno">—</div>
+    <div class="plan" id="plan">đang tải…</div>
+    <div class="meta" id="meta"></div>
+    <div class="note" id="kehoach"></div>
+  </div>
+
+  <div class="card">
+    <div class="clock idle" id="clock">--</div>
+    <div class="btns">
+      <button class="go" id="start">Bắt đầu</button>
+      <button class="stop" id="stop" disabled>Dừng</button>
+    </div>
+    <div class="nav">
+      <button id="prev">← Dòng trước</button>
+      <button id="next">Dòng sau →</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <h1>Mốc — im quá 10 giây là hỏng lần ghi</h1>
+    <div class="anchors" id="anchors"></div>
+    <div class="kv"><span>Vị trí UKF</span><span id="pos">—</span></div>
+    <div class="kv"><span>Số mốc lần này</span><span id="nanch">—</span></div>
+    <div class="kv"><span>Mẫu lần này</span><span id="nsamp">0</span></div>
+    <div class="kv"><span>Đã xong</span><span id="ndone">0</span></div>
+  </div>
+
+  <div class="card">
+    <h1>Nhật ký</h1>
+    <div id="log"></div>
+  </div>
+</div>
+<script>
+const $ = id => document.getElementById(id);
+let st = null, lastPose = null;
+
+function fmt(t){ if(t==null) return "--";
+  const s = Math.max(0, Math.round(t));
+  return String(Math.floor(s/60)).padStart(2,"0")+":"+String(s%60).padStart(2,"0"); }
+
+function draw(){
+  if(!st) return;
+  $("rowno").textContent = `Dòng ${st.dong} / ${st.tong_dong}`;
+  $("plan").textContent  = st.ke_hoach || "(trống)";
+  const d = st.chi_tiet || {};
+  const tags = [];
+  if(d.huong_deg)        tags.push(`hướng ${d.huong_deg}°`);
+  if(d.vat_can)          tags.push(`vật cản ${d.vat_can}`);
+  if(d.tam_vat_can_xy_m) tags.push(`tâm ${d.tam_vat_can_xy_m}`);
+  if(d.moc_bi_che)       tags.push(`che ${d.moc_bi_che}`);
+  $("meta").innerHTML = tags.map(t=>`<span class="tag">${t}</span>`).join("");
+  $("kehoach").textContent = d.ke_hoach_ghi_chu || "";
+
+  const c = $("clock");
+  c.textContent = st.dang_ghi ? fmt(st.con_lai_giay) : "--";
+  c.className = "clock " + (st.dang_ghi ? "run" : "idle");
+  $("start").disabled = st.dang_ghi;
+  $("stop").disabled  = !st.dang_ghi;
+  $("prev").disabled  = st.dang_ghi || st.dong <= 1;
+  $("next").disabled  = st.dang_ghi || st.dong >= st.tong_dong;
+
+  $("anchors").innerHTML = (st.moc||[]).map(m =>
+    `<div class="a${m.canh_bao?" bad":""}"><b>A${m.id}</b>
+     <small>${m.giay_truoc==null?"chưa thấy":m.giay_truoc.toFixed(1)+"s"}</small></div>`).join("");
+  $("nsamp").textContent = st.so_mau_lan_nay ?? 0;
+  $("ndone").textContent = `${st.da_xong} / ${st.tong_dong}`;
+}
+
+function log(muc, text){
+  const d = document.createElement("div");
+  d.className = muc;
+  d.textContent = new Date().toLocaleTimeString() + "  " + text;
+  $("log").prepend(d);
+}
+
+async function post(action, body){
+  const r = await fetch("/k2/"+action, {method:"POST",
+            headers:{"Content-Type":"application/json"},
+            body: JSON.stringify(body||{})});
+  const j = await r.json().catch(()=>({}));
+  if(!r.ok){ log("loi", j.loi || ("lỗi "+r.status)); return null; }
+  return j;
+}
+
+$("start").onclick = () => post("start").then(j => j && log("ok","bắt đầu ghi"));
+$("stop").onclick  = async () => {
+  const k3 = prompt("Kết quả lần ghi (k3): Được / Không", "Được");
+  if(k3 === null) return;
+  const note = prompt("Ghi chú (bỏ trống nếu không có)", "") || "";
+  const j = await post("stop", {k3, ghi_chu: note});
+  if(j && j.tom_tat){
+    const s = j.tom_tat;
+    log("xong", `${s.file}: ${s.giay}s, ${s.so_mau} mẫu` +
+      (s.trung_vi_x_m!=null ? `, trung vị (${s.trung_vi_x_m}, ${s.trung_vi_y_m})` : "") +
+      (s.du_60_giay ? "" : "  ⚠ CỬA SỔ < 60s"));
+    (s.van_de||[]).forEach(v => log("loi", "  " + v));
+  }
+};
+$("prev").onclick = () => post("goto", {dong: st.dong - 1});
+$("next").onclick = () => post("goto", {dong: st.dong + 1});
+
+fetch("/k2/state").then(r=>r.json()).then(j=>{st=j;draw();})
+  .catch(()=>log("loi","chưa bật --k2-plan trên server"));
+
+const es = new EventSource("/stream");
+es.addEventListener("k2",   e => { st = JSON.parse(e.data); draw(); });
+es.addEventListener("k2ev", e => { const v = JSON.parse(e.data); log(v.muc, v.text); });
+es.addEventListener("pose", e => {
+  lastPose = JSON.parse(e.data);
+  $("pos").textContent = `${lastPose.ukf_x_m.toFixed(2)} , ${lastPose.ukf_y_m.toFixed(2)} m`;
+  if(lastPose.anchors && lastPose.anchors.length) $("nanch").textContent = lastPose.anchors.length;
+});
+setInterval(() => { if(st && st.dang_ghi){ st.con_lai_giay = Math.max(0,(st.con_lai_giay||0)-1); draw(); } }, 1000);
+</script>
