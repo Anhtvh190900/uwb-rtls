@@ -12,7 +12,7 @@
 /* Enum definitions */
 typedef enum _protobuf_common_constant_t {
     protobuf_UNSPECIFIED = 0,
-    protobuf_PROTOCOL_REV = 125,
+    protobuf_PROTOCOL_REV = 126,
     protobuf_PROTOBUF_PACKET_WARN_BYTES = 230
 } protobuf_common_constant_t;
 
@@ -739,6 +739,44 @@ typedef struct _protobuf_calib_data_t {
     float dt;
 } protobuf_calib_data_t;
 
+typedef PB_BYTES_ARRAY_T(128) protobuf_range_diag_t_cir_t;
+/* Per-link DW1000 diagnostics of one Tag DS-TWR cycle. Sent by the Tag to the
+ host only when firmware is built with SYS_RANGING_DIAG_STREAM_ENABLE.
+ - Fields 11-21 describe the RESP frame as received by the Tag (resp_valid).
+ - Fields 22-24 carry an optional CIR window around the first path for one
+   anchor per cycle (the anchor rotates); cir is empty on the other links.
+ - Fields 25-28 let the host measure end-to-end loss of this stream. */
+typedef struct _protobuf_range_diag_t {
+    uint32_t cycle_id; /* Tag ranging cycles started since boot */
+    uint32_t seq; /* On-air DS-TWR sequence number (0-255) */
+    uint32_t timestamp_ms; /* Tag HAL tick when the cycle completed */
+    uint32_t anchor_id;
+    int32_t distance_mm; /* RESULT distance (3D, before fusion); 0 if !result_valid */
+    bool result_valid;
+    bool resp_valid;
+    uint32_t a_fp_amp_norm_q8; /* Anchor-side summaries carried by RESULT */
+    uint32_t a_fp_snr_q8;
+    uint32_t a_fp_confidence_q8;
+    uint32_t fp_amp1; /* Tag-side RESP diagnostics (DW1000 registers) */
+    uint32_t fp_amp2;
+    uint32_t fp_amp3;
+    uint32_t std_noise;
+    uint32_t rxpacc;
+    uint32_t rxpacc_nosat;
+    uint32_t cir_pwr;
+    uint32_t fp_index_q6;
+    uint32_t peak_path_index;
+    uint32_t peak_path_amp;
+    uint32_t lde_threshold;
+    uint32_t cir_start_index; /* Accumulator sample index of the first CIR sample */
+    uint32_t cir_read_us; /* Measured accumulator read time; 0 = no capture */
+    protobuf_range_diag_t_cir_t cir; /* int16 little-endian (real, imaginary) pairs */
+    uint32_t link_count; /* Links reported for this cycle */
+    uint32_t pkt_seq; /* Tag counter of range_diag send attempts */
+    uint32_t link_drop_count; /* Cumulative links skipped because a newer cycle arrived */
+    uint32_t uart_tx_fail_count; /* Cumulative host-UART write failures (all streams) */
+} protobuf_range_diag_t;
+
 typedef struct _protobuf_packet_t {
     bool has_hdr;
     protobuf_hdr_t hdr;
@@ -844,6 +882,8 @@ typedef struct _protobuf_packet_t {
         /* UWB configuration */
         protobuf_antenna_delay_bcast_set_t antenna_delay_bcast_set;
         protobuf_bcast_apply_ack_t bcast_apply_ack;
+        /* Research diagnostics */
+        protobuf_range_diag_t range_diag;
     } params;
 } protobuf_packet_t;
 
@@ -1089,6 +1129,7 @@ extern "C" {
 
 
 
+
 /* Initializer values for message structs */
 #define protobuf_addr_t_init_default             {_protobuf_device_addr_t_MIN, _protobuf_device_addr_t_MIN}
 #define protobuf_hdr_t_init_default              {false, protobuf_addr_t_init_default, 0, 0}
@@ -1181,6 +1222,7 @@ extern "C" {
 #define protobuf_zone_profile_get_t_init_default {0}
 #define protobuf_zone_profile_resp_t_init_default {false, protobuf_zone_profile_t_init_default}
 #define protobuf_calib_data_t_init_default       {0, 0, 0, 0, 0, 0, 0, 0, {0, 0, 0, 0, 0, 0, 0, 0}, 0, {0, 0, 0, 0, 0, 0, 0, 0}, 0, {0, 0, 0, 0, 0, 0, 0, 0}, 0, 0}
+#define protobuf_range_diag_t_init_default       {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, {0, {0}}, 0, 0, 0, 0}
 #define protobuf_packet_t_init_default           {false, protobuf_hdr_t_init_default, 0, {protobuf_none_t_init_default}}
 #define protobuf_addr_t_init_zero                {_protobuf_device_addr_t_MIN, _protobuf_device_addr_t_MIN}
 #define protobuf_hdr_t_init_zero                 {false, protobuf_addr_t_init_zero, 0, 0}
@@ -1273,6 +1315,7 @@ extern "C" {
 #define protobuf_zone_profile_get_t_init_zero    {0}
 #define protobuf_zone_profile_resp_t_init_zero   {false, protobuf_zone_profile_t_init_zero}
 #define protobuf_calib_data_t_init_zero          {0, 0, 0, 0, 0, 0, 0, 0, {0, 0, 0, 0, 0, 0, 0, 0}, 0, {0, 0, 0, 0, 0, 0, 0, 0}, 0, {0, 0, 0, 0, 0, 0, 0, 0}, 0, 0}
+#define protobuf_range_diag_t_init_zero          {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, {0, {0}}, 0, 0, 0, 0}
 #define protobuf_packet_t_init_zero              {false, protobuf_hdr_t_init_zero, 0, {protobuf_none_t_init_zero}}
 
 /* Field tags (for use in manual encoding/decoding) */
@@ -1539,6 +1582,34 @@ extern "C" {
 #define protobuf_calib_data_t_fp_snr_tag         10
 #define protobuf_calib_data_t_error_frame_cnt_tag 11
 #define protobuf_calib_data_t_dt_tag             12
+#define protobuf_range_diag_t_cycle_id_tag       1
+#define protobuf_range_diag_t_seq_tag            2
+#define protobuf_range_diag_t_timestamp_ms_tag   3
+#define protobuf_range_diag_t_anchor_id_tag      4
+#define protobuf_range_diag_t_distance_mm_tag    5
+#define protobuf_range_diag_t_result_valid_tag   6
+#define protobuf_range_diag_t_resp_valid_tag     7
+#define protobuf_range_diag_t_a_fp_amp_norm_q8_tag 8
+#define protobuf_range_diag_t_a_fp_snr_q8_tag    9
+#define protobuf_range_diag_t_a_fp_confidence_q8_tag 10
+#define protobuf_range_diag_t_fp_amp1_tag        11
+#define protobuf_range_diag_t_fp_amp2_tag        12
+#define protobuf_range_diag_t_fp_amp3_tag        13
+#define protobuf_range_diag_t_std_noise_tag      14
+#define protobuf_range_diag_t_rxpacc_tag         15
+#define protobuf_range_diag_t_rxpacc_nosat_tag   16
+#define protobuf_range_diag_t_cir_pwr_tag        17
+#define protobuf_range_diag_t_fp_index_q6_tag    18
+#define protobuf_range_diag_t_peak_path_index_tag 19
+#define protobuf_range_diag_t_peak_path_amp_tag  20
+#define protobuf_range_diag_t_lde_threshold_tag  21
+#define protobuf_range_diag_t_cir_start_index_tag 22
+#define protobuf_range_diag_t_cir_read_us_tag    23
+#define protobuf_range_diag_t_cir_tag            24
+#define protobuf_range_diag_t_link_count_tag     25
+#define protobuf_range_diag_t_pkt_seq_tag        26
+#define protobuf_range_diag_t_link_drop_count_tag 27
+#define protobuf_range_diag_t_uart_tx_fail_count_tag 28
 #define protobuf_packet_t_hdr_tag                1
 #define protobuf_packet_t_none_tag               2
 #define protobuf_packet_t_ack_tag                3
@@ -1616,6 +1687,7 @@ extern "C" {
 #define protobuf_packet_t_calib_data_tag         87
 #define protobuf_packet_t_antenna_delay_bcast_set_tag 88
 #define protobuf_packet_t_bcast_apply_ack_tag    89
+#define protobuf_packet_t_range_diag_tag         90
 
 /* Struct field encoding specification for nanopb */
 #define protobuf_addr_t_FIELDLIST(X, a) \
@@ -2267,6 +2339,38 @@ X(a, STATIC,   SINGULAR, FLOAT,    dt,               12)
 #define protobuf_calib_data_t_CALLBACK NULL
 #define protobuf_calib_data_t_DEFAULT NULL
 
+#define protobuf_range_diag_t_FIELDLIST(X, a) \
+X(a, STATIC,   SINGULAR, UINT32,   cycle_id,          1) \
+X(a, STATIC,   SINGULAR, UINT32,   seq,               2) \
+X(a, STATIC,   SINGULAR, UINT32,   timestamp_ms,      3) \
+X(a, STATIC,   SINGULAR, UINT32,   anchor_id,         4) \
+X(a, STATIC,   SINGULAR, SINT32,   distance_mm,       5) \
+X(a, STATIC,   SINGULAR, BOOL,     result_valid,      6) \
+X(a, STATIC,   SINGULAR, BOOL,     resp_valid,        7) \
+X(a, STATIC,   SINGULAR, UINT32,   a_fp_amp_norm_q8,   8) \
+X(a, STATIC,   SINGULAR, UINT32,   a_fp_snr_q8,       9) \
+X(a, STATIC,   SINGULAR, UINT32,   a_fp_confidence_q8,  10) \
+X(a, STATIC,   SINGULAR, UINT32,   fp_amp1,          11) \
+X(a, STATIC,   SINGULAR, UINT32,   fp_amp2,          12) \
+X(a, STATIC,   SINGULAR, UINT32,   fp_amp3,          13) \
+X(a, STATIC,   SINGULAR, UINT32,   std_noise,        14) \
+X(a, STATIC,   SINGULAR, UINT32,   rxpacc,           15) \
+X(a, STATIC,   SINGULAR, UINT32,   rxpacc_nosat,     16) \
+X(a, STATIC,   SINGULAR, UINT32,   cir_pwr,          17) \
+X(a, STATIC,   SINGULAR, UINT32,   fp_index_q6,      18) \
+X(a, STATIC,   SINGULAR, UINT32,   peak_path_index,  19) \
+X(a, STATIC,   SINGULAR, UINT32,   peak_path_amp,    20) \
+X(a, STATIC,   SINGULAR, UINT32,   lde_threshold,    21) \
+X(a, STATIC,   SINGULAR, UINT32,   cir_start_index,  22) \
+X(a, STATIC,   SINGULAR, UINT32,   cir_read_us,      23) \
+X(a, STATIC,   SINGULAR, BYTES,    cir,              24) \
+X(a, STATIC,   SINGULAR, UINT32,   link_count,       25) \
+X(a, STATIC,   SINGULAR, UINT32,   pkt_seq,          26) \
+X(a, STATIC,   SINGULAR, UINT32,   link_drop_count,  27) \
+X(a, STATIC,   SINGULAR, UINT32,   uart_tx_fail_count,  28)
+#define protobuf_range_diag_t_CALLBACK NULL
+#define protobuf_range_diag_t_DEFAULT NULL
+
 #define protobuf_packet_t_FIELDLIST(X, a) \
 X(a, STATIC,   OPTIONAL, MESSAGE,  hdr,               1) \
 X(a, STATIC,   ONEOF,    MESSAGE,  (params,none,params.none),   2) \
@@ -2344,7 +2448,8 @@ X(a, STATIC,   ONEOF,    MESSAGE,  (params,zone_profile_get,params.zone_profile_
 X(a, STATIC,   ONEOF,    MESSAGE,  (params,zone_profile_resp,params.zone_profile_resp),  83) \
 X(a, STATIC,   ONEOF,    MESSAGE,  (params,calib_data,params.calib_data),  87) \
 X(a, STATIC,   ONEOF,    MESSAGE,  (params,antenna_delay_bcast_set,params.antenna_delay_bcast_set),  88) \
-X(a, STATIC,   ONEOF,    MESSAGE,  (params,bcast_apply_ack,params.bcast_apply_ack),  89)
+X(a, STATIC,   ONEOF,    MESSAGE,  (params,bcast_apply_ack,params.bcast_apply_ack),  89) \
+X(a, STATIC,   ONEOF,    MESSAGE,  (params,range_diag,params.range_diag),  90)
 #define protobuf_packet_t_CALLBACK NULL
 #define protobuf_packet_t_DEFAULT NULL
 #define protobuf_packet_t_hdr_MSGTYPE protobuf_hdr_t
@@ -2424,6 +2529,7 @@ X(a, STATIC,   ONEOF,    MESSAGE,  (params,bcast_apply_ack,params.bcast_apply_ac
 #define protobuf_packet_t_params_calib_data_MSGTYPE protobuf_calib_data_t
 #define protobuf_packet_t_params_antenna_delay_bcast_set_MSGTYPE protobuf_antenna_delay_bcast_set_t
 #define protobuf_packet_t_params_bcast_apply_ack_MSGTYPE protobuf_bcast_apply_ack_t
+#define protobuf_packet_t_params_range_diag_MSGTYPE protobuf_range_diag_t
 
 extern const pb_msgdesc_t protobuf_addr_t_msg;
 extern const pb_msgdesc_t protobuf_hdr_t_msg;
@@ -2516,6 +2622,7 @@ extern const pb_msgdesc_t protobuf_zone_profile_set_t_msg;
 extern const pb_msgdesc_t protobuf_zone_profile_get_t_msg;
 extern const pb_msgdesc_t protobuf_zone_profile_resp_t_msg;
 extern const pb_msgdesc_t protobuf_calib_data_t_msg;
+extern const pb_msgdesc_t protobuf_range_diag_t_msg;
 extern const pb_msgdesc_t protobuf_packet_t_msg;
 
 /* Defines for backwards compatibility with code written before nanopb-0.4.0 */
@@ -2610,6 +2717,7 @@ extern const pb_msgdesc_t protobuf_packet_t_msg;
 #define protobuf_zone_profile_get_t_fields &protobuf_zone_profile_get_t_msg
 #define protobuf_zone_profile_resp_t_fields &protobuf_zone_profile_resp_t_msg
 #define protobuf_calib_data_t_fields &protobuf_calib_data_t_msg
+#define protobuf_range_diag_t_fields &protobuf_range_diag_t_msg
 #define protobuf_packet_t_fields &protobuf_packet_t_msg
 
 /* Maximum encoded size of messages (where known) */
@@ -2668,6 +2776,7 @@ extern const pb_msgdesc_t protobuf_packet_t_msg;
 #define protobuf_prefilter_cfg_resp_t_size       34
 #define protobuf_prefilter_cfg_set_t_size        34
 #define protobuf_prefilter_cfg_t_size            32
+#define protobuf_range_diag_t_size               298
 #define protobuf_ranging_result_t_size           146
 #define protobuf_ranging_start_t_size            8
 #define protobuf_ranging_status_get_t_size       6

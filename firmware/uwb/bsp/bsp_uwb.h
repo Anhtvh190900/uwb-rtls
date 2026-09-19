@@ -32,10 +32,24 @@ typedef struct {
     uint16_t first_path_index_q6;
     uint16_t peak_path_index;
     uint16_t peak_path_amp;
+    uint16_t cir_power;            /* CIR_PWR (0x12:06); 0 unless SYS_RANGING_DIAG_STREAM_ENABLE */
+    uint16_t rx_pream_count_nosat; /* RXPACC_NOSAT (0x27:2C); 0 unless SYS_RANGING_DIAG_STREAM_ENABLE */
     uint8_t  fp_confidence_q8;
     bool     confidence_valid;
     bool     valid;
 } bsp_uwb_rx_quality_t;
+
+/* Maximum CIR window captured for one armed frame (complex samples, 4 bytes each). */
+#define BSP_UWB_CIR_WINDOW_MAX_SAMPLES  32U
+
+typedef struct {
+    uint64_t rx_ts;                /* 40-bit RX timestamp of the captured frame */
+    uint32_t read_us;              /* Accumulator SPI read duration (DWT cycle counter) */
+    uint16_t start_index;          /* Accumulator sample index of the first sample */
+    uint16_t sample_count;         /* Complex samples stored in data */
+    uint8_t  data[BSP_UWB_CIR_WINDOW_MAX_SAMPLES * 4U]; /* int16 LE pairs: real, imaginary */
+    bool     valid;
+} bsp_uwb_cir_window_t;
 
 typedef enum {
     BSP_UWB_EVENT_NONE = 0,
@@ -267,6 +281,31 @@ void bsp_uwb_get_event_stats(bsp_uwb_event_stats_t *stats);
  * @brief Discard any pending UWB events
  */
 void bsp_uwb_clear_event(void);
+
+/**
+ * @brief Arm a one-shot CIR window capture for the next received frame whose
+ *        payload starts with @p match. The capture runs in the RX callback,
+ *        before the receiver is re-enabled.
+ * @note  Implemented only when SYS_RANGING_DIAG_CIR_ENABLE != 0.
+ * @param[in] match        Leading payload bytes identifying the target frame
+ * @param[in] match_len    Number of bytes in @p match (1-4)
+ * @param[in] pre_samples  Samples captured before the integer first-path index
+ * @param[in] sample_count Complex samples to capture (1-BSP_UWB_CIR_WINDOW_MAX_SAMPLES)
+ */
+void bsp_uwb_cir_arm(const uint8_t *match, uint8_t match_len, uint16_t pre_samples, uint16_t sample_count);
+
+/**
+ * @brief Cancel a pending CIR capture and discard any captured window.
+ */
+void bsp_uwb_cir_disarm(void);
+
+/**
+ * @brief Take the captured CIR window if it belongs to the frame received at @p rx_ts.
+ * @param[in]  rx_ts 40-bit RX timestamp of the expected frame
+ * @param[out] out   Captured window
+ * @return true when @p out received a window (the capture is consumed).
+ */
+bool bsp_uwb_cir_take(uint64_t rx_ts, bsp_uwb_cir_window_t *out);
 
 /**
  * @brief Read internal temperature and voltage of DW1000 chip.

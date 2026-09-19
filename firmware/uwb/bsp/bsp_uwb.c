@@ -17,6 +17,7 @@
 #include "spi.h"
 #include "sys_logger.h"
 #include "config.h"
+#include "positioning_config.h"
 #include "app_rtos_handles.h"
 
 #include <stdio.h>
@@ -59,6 +60,10 @@ static inline uint64_t dw_read_timestamp(const uint8_t *buf)
 #define RX_TIME_ID 0x15
 #define TX_TIME_ID 0x17
 
+/* Diagnostics sub-registers not named by the Decawave driver (DW1000 User Manual v2.18). */
+#define RX_FQUAL_CIR_PWR_OFFSET  0x06  /* 0x12:06 CIR_PWR, 16-bit */
+#define DRX_RXPACC_NOSAT_OFFSET  0x2C  /* 0x27:2C RXPACC_NOSAT, 16-bit */
+
 /* Private variables -------------------------------------------------- */
 static bool     s_initialized       = false;
 static bool     s_sleeping          = false;
@@ -93,6 +98,24 @@ static bsp_uwb_event_t  s_ev_queue[UWB_EVENT_QUEUE_SIZE];
 static volatile bsp_uwb_event_stats_t s_event_stats = {0};
 static void uwb_tx_cb(const dwt_callback_data_t *cb_data);
 static void uwb_rx_cb(const dwt_callback_data_t *cb_data);
+
+#if SYS_RANGING_DIAG_CIR_ENABLE
+/* One-shot CIR capture armed by sys_ranging for a frame whose payload prefix
+ * matches. Arm, capture and take all run on the UwbRanging task. */
+#define CIR_MATCH_MAX_LEN      4U
+#define CIR_ACC_MAX_SAMPLES    992U /* 16 MHz PRF accumulator span; also within the 64 MHz span */
+typedef struct {
+    uint8_t  match[CIR_MATCH_MAX_LEN];
+    uint8_t  match_len;
+    uint16_t pre_samples;
+    uint16_t sample_count;
+    bool     armed;
+} cir_capture_arm_t;
+static cir_capture_arm_t    s_cir_arm    = {0};
+static bsp_uwb_cir_window_t s_cir_window = {0};
+static uint8_t              s_cir_raw[1U + (BSP_UWB_CIR_WINDOW_MAX_SAMPLES * 4U)]; /* +1 dummy octet */
+static void capture_cir_window(const bsp_uwb_event_t *ev);
+#endif
 
 bool bsp_uwb_get_event(bsp_uwb_event_t *out_event)
 {
@@ -302,6 +325,10 @@ static void capture_rx_quality(bsp_uwb_rx_quality_t *out_quality)
   out_quality->first_path_index_q6 = first_path_q6;
   out_quality->peak_path_index = peak_path_idx;
   out_quality->peak_path_amp = peak_path_amp;
+#if SYS_RANGING_DIAG_STREAM_ENABLE
+  out_quality->cir_power            = dwt_read16bitoffsetreg(RX_FQUAL_ID, RX_FQUAL_CIR_PWR_OFFSET);
+  out_quality->rx_pream_count_nosat = dwt_read16bitoffsetreg(DRX_CONF_ID, DRX_RXPACC_NOSAT_OFFSET);
+#endif
 
   if (rx_pream_count > 0U && (fp_amp1 != 0U || fp_amp2 != 0U || fp_amp3 != 0U))
   {
@@ -1023,6 +1050,79 @@ bsp_err_t bsp_uwb_get_last_rx_quality(bsp_uwb_rx_quality_t *quality)
   return BSP_OK;
 }
 
+#if SYS_RANGING_DIAG_CIR_ENABLE
+void bsp_uwb_cir_arm(const uint8_t *match, uint8_t match_len, uint16_t pre_samples, uint16_t sample_count)
+{
+  s_cir_window.valid = false;
+  if (match == NULL || match_len == 0U || match_len > CIR_MATCH_MAX_LEN || sample_count == 0U
+      || sample_count > BSP_UWB_CIR_WINDOW_MAX_SAMPLES)
+  {
+    s_cir_arm.armed = false;
+    return;
+  }
+  memcpy(s_cir_arm.match, match, match_len);
+  s_cir_arm.match_len    = match_len;
+  s_cir_arm.pre_samples  = pre_samples;
+  s_cir_arm.sample_count = sample_count;
+  s_cir_arm.armed        = true;
+}
+
+void bsp_uwb_cir_disarm(void)
+{
+  s_cir_arm.armed    = false;
+  s_cir_window.valid = false;
+}
+
+bool bsp_uwb_cir_take(uint64_t rx_ts, bsp_uwb_cir_window_t *out)
+{
+  if (out == NULL || !s_cir_window.valid || ((s_cir_window.rx_ts ^ rx_ts) & DW_MASK_40) != 0ULL)
+  {
+    return false;
+  }
+  *out               = s_cir_window;
+  s_cir_window.valid = false;
+  return true;
+}
+
+static void capture_cir_window(const bsp_uwb_event_t *ev)
+{
+  if (!s_cir_arm.armed || ev->rx_len < s_cir_arm.match_len
+      || memcmp(ev->rx_data, s_cir_arm.match, s_cir_arm.match_len) != 0)
+  {
+    return;
+  }
+  s_cir_arm.armed = false; /* one shot */
+
+  uint16_t fp_q6 = ev->rx_quality.first_path_index_q6;
+  if (fp_q6 == 0U)
+  {
+    return;
+  }
+  uint16_t count = s_cir_arm.sample_count;
+  uint16_t fp    = (uint16_t) (fp_q6 >> 6);
+  uint16_t start = (fp > s_cir_arm.pre_samples) ? (uint16_t) (fp - s_cir_arm.pre_samples) : 0U;
+  if (((uint32_t) start + count) > CIR_ACC_MAX_SAMPLES)
+  {
+    start = (uint16_t) (CIR_ACC_MAX_SAMPLES - count);
+  }
+
+  CoreDebug->DEMCR |= CoreDebug_DEMCR_TRCENA_Msk;
+  DWT->CTRL |= DWT_CTRL_CYCCNTENA_Msk;
+  uint32_t t0 = DWT->CYCCNT;
+  /* ACC_MEM (register 0x25) outputs one dummy octet before the requested samples. */
+  dwt_readaccdata(s_cir_raw, (uint16_t) (1U + (count * 4U)), (uint16_t) (start * 4U));
+  uint32_t cycles        = DWT->CYCCNT - t0;
+  uint32_t cycles_per_us = SystemCoreClock / 1000000UL;
+
+  memcpy(s_cir_window.data, &s_cir_raw[1], (size_t) count * 4U);
+  s_cir_window.rx_ts        = ev->rx_ts & DW_MASK_40;
+  s_cir_window.read_us      = (cycles_per_us > 0U) ? (cycles / cycles_per_us) : 0U;
+  s_cir_window.start_index  = start;
+  s_cir_window.sample_count = count;
+  s_cir_window.valid        = true;
+}
+#endif /* SYS_RANGING_DIAG_CIR_ENABLE */
+
 bsp_err_t bsp_uwb_get_last_rx_timestamp(uint64_t *timestamp)
 {
   CHECK_PARAM(timestamp, BSP_ERR_PARAM);
@@ -1310,6 +1410,10 @@ static void uwb_rx_cb(const dwt_callback_data_t *cb_data)
                 | ((uint64_t)ts[4] << 32);
       capture_rx_quality(&ev->rx_quality);
       s_last_rx_quality = ev->rx_quality;
+#if SYS_RANGING_DIAG_CIR_ENABLE
+      /* Receiver stays idle until dwt_rxenable() below: ACC_MEM may be read. */
+      capture_cir_window(ev);
+#endif
       s_ev_head = next_head;
       s_event_stats.rx_ok++;
 

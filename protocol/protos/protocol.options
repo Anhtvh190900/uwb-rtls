@@ -16,6 +16,7 @@ protobuf.sensor_fusion_result_t.anchors            max_count:8
 protobuf.calib_data_t.distance                     max_count:8
 protobuf.calib_data_t.fp_amp_norm                  max_count:8
 protobuf.calib_data_t.fp_snr                       max_count:8
+protobuf.range_diag_t.cir                          max_size:128
 
 protobuf.common_constant_t                          long_names:false
 protobuf.packet_ack_response_t                      long_names:false

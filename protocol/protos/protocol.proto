@@ -24,7 +24,7 @@ package protobuf;
 
 enum common_constant_t {
     UNSPECIFIED                = 0;
-    PROTOCOL_REV               = 125;
+    PROTOCOL_REV               = 126;
     PROTOBUF_PACKET_WARN_BYTES = 230;
 }
 
@@ -784,6 +784,47 @@ message calib_data_t {
     float dt                         = 12;
 }
 
+/* Ranging diagnostics (research data collection) --------------------------- */
+
+/*
+ * Per-link DW1000 diagnostics of one Tag DS-TWR cycle. Sent by the Tag to the
+ * host only when firmware is built with SYS_RANGING_DIAG_STREAM_ENABLE.
+ * - Fields 11-21 describe the RESP frame as received by the Tag (resp_valid).
+ * - Fields 22-24 carry an optional CIR window around the first path for one
+ *   anchor per cycle (the anchor rotates); cir is empty on the other links.
+ * - Fields 25-28 let the host measure end-to-end loss of this stream.
+ */
+message range_diag_t {
+    uint32 cycle_id            = 1;  /* Tag ranging cycles started since boot */
+    uint32 seq                 = 2;  /* On-air DS-TWR sequence number (0-255) */
+    uint32 timestamp_ms        = 3;  /* Tag HAL tick when the cycle completed */
+    uint32 anchor_id           = 4;
+    sint32 distance_mm         = 5;  /* RESULT distance (3D, before fusion); 0 if !result_valid */
+    bool   result_valid        = 6;
+    bool   resp_valid          = 7;
+    uint32 a_fp_amp_norm_q8    = 8;  /* Anchor-side summaries carried by RESULT */
+    uint32 a_fp_snr_q8         = 9;
+    uint32 a_fp_confidence_q8  = 10;
+    uint32 fp_amp1             = 11; /* Tag-side RESP diagnostics (DW1000 registers) */
+    uint32 fp_amp2             = 12;
+    uint32 fp_amp3             = 13;
+    uint32 std_noise           = 14;
+    uint32 rxpacc              = 15;
+    uint32 rxpacc_nosat        = 16;
+    uint32 cir_pwr             = 17;
+    uint32 fp_index_q6         = 18;
+    uint32 peak_path_index     = 19;
+    uint32 peak_path_amp       = 20;
+    uint32 lde_threshold       = 21;
+    uint32 cir_start_index     = 22; /* Accumulator sample index of the first CIR sample */
+    uint32 cir_read_us         = 23; /* Measured accumulator read time; 0 = no capture */
+    bytes  cir                 = 24; /* int16 little-endian (real, imaginary) pairs */
+    uint32 link_count          = 25; /* Links reported for this cycle */
+    uint32 pkt_seq             = 26; /* Tag counter of range_diag send attempts */
+    uint32 link_drop_count     = 27; /* Cumulative links skipped because a newer cycle arrived */
+    uint32 uart_tx_fail_count  = 28; /* Cumulative host-UART write failures (all streams) */
+}
+
 /* Packet ------------------------------------------------------------------- */
 
 message packet_t {
@@ -926,6 +967,9 @@ message packet_t {
         /* UWB configuration */
         antenna_delay_bcast_set_t antenna_delay_bcast_set = 88;
         bcast_apply_ack_t         bcast_apply_ack         = 89;
+
+        /* Research diagnostics */
+        range_diag_t              range_diag              = 90;
 
     }
 }

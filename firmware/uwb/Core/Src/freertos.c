@@ -797,6 +797,11 @@ void sensor_fusion_entry(void *argument)
       sys_sensor_fusion_stream_ble(fusion_update_performed ? UKF_STEP_UPDATE : UKF_STEP_PREDICT);
     }
     
+#if SYS_RANGING_DIAG_STREAM_ENABLE
+    /* Research stream: per-link DW1000 diagnostics (positioning_config.h). */
+    app_tag_range_diag_stream();
+#endif
+
     osDelay(20);
   }
 

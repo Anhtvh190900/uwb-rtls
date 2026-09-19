@@ -1664,6 +1664,22 @@ bool network_send_calib_data(network_core_t *stream, uint8_t dst, const protobuf
     return false;
 }
 
+bool network_send_range_diag(network_core_t *stream, uint8_t dst, const protobuf_range_diag_t *data)
+{
+    CHECK(stream && data, false);
+    CHECK(network_cmd_is_ranging_enabled(), false);
+    CHECK(network_cmd_is_ble_host_active(), false);
+
+    /* Research stream paced by its caller; it must not consume the sensor
+     * fusion stream period. */
+    protobuf_packet_t pkt;
+    memset(&pkt, 0, sizeof(pkt));
+    pkt.which_params = protobuf_packet_t_range_diag_tag;
+    pkt.params.range_diag = *data;
+
+    return network_core_send_packet(stream, dst, &pkt);
+}
+
 #ifdef HAVE_BLE_PERIPHERAL
 
 /**
